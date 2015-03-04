@@ -69,8 +69,9 @@ int main(int argc, char *argv[])
     {
         free(student_buffer);
         exit_nicely(conn, "Getting student records");
+    }
 
-    int NUM_OF_STUDENTS = PQntuples(res);
+    int NUM_STUD = PQntuples(res);
 
     //start from beginning to generate enrollment for all student
     int i = 1;     
@@ -78,15 +79,15 @@ int main(int argc, char *argv[])
     if (input_student_id)
     {
         i = input_student_id;
-        NUM_OF_STUDENTS = i;
+        NUM_STUD = i;
     }
 
     if (DEBUG)
-        fprintf(stderr, "NUM_OF_STUDENTS = %d\n", NUM_OF_STUDENTS);
+        fprintf(stderr, "NUM_STUD = %d\n", NUM_STUD);
 
     //Iterate through records, joining and finding courses and CRNs to add to enrollment
     PGresult *maj_res;    
-    for (i; i <= NUM_OF_STUDENTS; i++)
+    for (i; i <= NUM_STUD; i++)
     {
         //Find major(s) for this student (join student & student_major on student_id and student_major & major on major_id
         char *maj_buffer = (char *) malloc(sizeof(char) * 1024);
@@ -94,7 +95,58 @@ int main(int argc, char *argv[])
                              sm.major_id=maj.id having s.id=%d", i);
         
         maj_res = PQexec(conn, maj_buffer);
-        //
+        if (PQresultStatus(maj_res) != PGRES_TUPLES_OK)
+        {
+            free(maj_buffer);
+            exit_nicely(conn, "Getting records for student %d", i);
+        }       
+
+        int NUM_MAJ = PQntuples(maj_res);
+        if (DEBUG)
+            fprintf(stderr, "Student %d has %d majors\n", i, NUM_MAJ);
+
+        int majors [10];
+        int majoriterate;
+        for (majoriterate = 0; majoriterate < NUM_MAJ; majoriterate++)
+        {
+            majors[majoriterate] = atoi(PQgetvalue(maj_res, majoriterate, 0));
+            if (DEBUG)
+                fprintf(stderr, "Major(s) are: %d\n" majoriterate);
+        }
+
+        int j;
+        PGresult *course_of_maj_res
+        for (j = 0; j < NUM_MAJ; j++)
+        {
+            //access each major as majors[j] 
+            char *course_buff = (char *) malloc(sizeof(char) * 1024);
+            sprint(course_buff, "select c.id from from major m join department d on m.department_id=d.id join course c on \ 
+                                 d.id=c.department_id having m.id=%d", majors[j]);
+
+            course_of_maj_res = PQexec(conn, course_buff);
+            if (PQresultStatus(course_of_maj_res) != PGRES_TUPLES_OK)
+            {
+                free(course_buffer);
+                exit_nicely(conn, "Getting course for major %d", majors[j]);
+            } 
+
+            int NUM_COURSES = PQntuples(course_of_maj_res);
+            if (DEBUG)
+                fprintf(stderr, "Major %d has %d courses\n", majors[j], NUM_COURSES);
+
+            int courses [25];
+            int courseiterate;
+            for (courseiterate = 0; courseiterate < NUM_COURSES; courseiterate++)
+            {
+                courses[courseiterate] = atoi(PQgetvalue(course_of_maj_res, courseiterate, 0));
+                if (DEBUG)
+                    fprintf(stderr, "Major %d has courses %d\n", majors[j], courses[courseiterate];
+            }
+
+
+        } 
+
+
     }
  
     free(student_buffer);
