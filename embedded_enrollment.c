@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
         {
             majors[majoriterate] = atoi(PQgetvalue(maj_res, majoriterate, 0));
             if (DEBUG)
-                fprintf(stderr, "Major(s) are: %d\n" majoriterate);
+                fprintf(stderr, "\tMajor(s) are: %d\n" majoriterate);
         }
 
         int j;
@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
 
             int NUM_COURSES = PQntuples(course_of_maj_res);
             if (DEBUG)
-                fprintf(stderr, "Major %d has %d courses\n", majors[j], NUM_COURSES);
+                fprintf(stderr, "\t\tMajor %d has %d courses\n", majors[j], NUM_COURSES);
 
             int courses [25];
             int courseiterate;
@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
             {
                 courses[courseiterate] = atoi(PQgetvalue(course_of_maj_res, courseiterate, 0));
                 if (DEBUG)
-                    fprintf(stderr, "Major %d has courses %d\n", majors[j], courses[courseiterate];
+                    fprintf(stderr, "\t\t\tMajor %d has courses %d\n", majors[j], courses[courseiterate];
             }
 
 
