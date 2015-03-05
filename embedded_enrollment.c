@@ -23,7 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libpq-fe.h>
-
+#include <string.h>
 
 int exit_nicely(PGconn *conn, char *loc)
 {
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
     if (DEBUG)
         fprintf(f, "NUM_STUD = %d\n", NUM_STUD);
 
-    //Iterate through records, joining and finding courses and CRNs to add to enrollment
+    //Iterate through records FOR EACH STUDENT, joining and finding courses and CRNs to add to enrollment
     PGresult *enroll_date_res;
     PGresult *maj_res;    
     for (i; i <= NUM_STUD; i++)
@@ -168,39 +168,182 @@ int main(int argc, char *argv[])
             {
                 courses[courseiterate] = atoi(PQgetvalue(course_of_maj_res, courseiterate, 0));
                 if (DEBUG)
-                    fprintf(f, "\t\t\tMajor %d includes course %d\n", majors[j], courses[courseiterate]);
+                    fprintf(stderr, "\t\t\tMajor %d includes course %d\n", majors[j], courses[courseiterate]);
 
-                //TODO randomly select which courses to continue on this path (to potential registration)
+                //randomly select which courses to continue on this path (to potential registration)
+                int threshold = 3; //this number must be beat by rand in order to continue on path
+                int rand = rand_lim(20);
+                if (rand < threshold)
+                {
+                    //fprintf(stderr, "RANDOMLY SELECTED TO NOT CONTINUE\n");
+                    continue;
+                }
 
                 //check if course has a prerequisite
-                int req = check_prereq(conn, courses[courseiterate]);
+                int *prereq_list = (int*)malloc (sizeof(int) * 10);
+                int req = check_prereq(conn, courses[courseiterate], prereq_list);
                 if (req < 0) //prereq needed
+                {
+                    //prereq required. See if it's been taken!
+                    int cancel = 0;
+                    int k = 0;
+                    while (prereq_list[k]) 
+                    {
+                        char *taken_buff = (char*) malloc(sizeof(char) * 1024);
+                        sprintf(taken_buff, "select distinct e.student_id from registry.enrollment e join registry.section s on s.crn=e.crn where s.course_id=%d;", prereq_list[k]);
+                        PGresult *taken_res = PQexec(conn, taken_buff);
+
+                        if (PQresultStatus(taken_res) != PGRES_TUPLES_OK)
+                        {
+                            free(taken_buff);
+                            exit_nicely(conn, "Checking which prereqs have been taken");
+                        }
+ 
+                        if (PQntuples(taken_res) > 0)
+                        {
+                            cancel = 1;
+                            break;
+                        }
+                        k++;
+                        PQclear(taken_res);
+                    }
+
+                    if (cancel > 0)
+                        continue;
+                }
+                else
                 {
                     //check if already enrolled
                     int enrolled = already_enrolled(conn, i, courses[courseiterate]);
                     if (enrolled < 0)
                     {
-                        fprintf(stderr, "%d Hasnt taken prereq for %d! \n", i, courses[courseiterate]);
+                        fprintf(f, "%d Hasnt taken prereq for %d! \n", i, courses[courseiterate]);
                         continue;
                     }
 
-                    //TODO: Join course and section on course_id, randomly select a section
-                    //TODO: Section MUST be after enroll_year and enroll_term
-
-                    //add that student/crn to enrollment
-                    char *insert_buff = (char *)malloc (sizeof(char) * 1024);
-                    sprint(insert_buff, "insert into registry.enrollment values(%d, %d);");
-                    insert_res = PQexec(conn, insert_buff);
-
-                    if (PQresultStatus(insert_res) != PGRES_TUPLES_OK)
+                    //TODO: Join course and section on course_id, 
+                    char *section_buff = (char *) malloc(sizeof(char) * 1024);
+                    sprintf(section_buff, "select distinct s.crn, s.quarter, s.year from registry.section s join registry.course c on s.course_id=%d;", courses[courseiterate]);
+                    PGresult *section_res = PQexec(conn, section_buff);
+ 
+                    if (PQresultStatus(section_res) != PGRES_TUPLES_OK)
                     {
-                        free(insert_buffer);
-                        exit_nicely(conn, "Inserting into Enrollment");
-                    } 
+                        free(section_buff);
+                        exit_nicely(conn, "Joining Section & Course");
+                    }
+
+                    int NUM_SECTIONS = PQntuples(section_res);
+                    if (NUM_SECTIONS < 1)
+                    {
+                        PQclear(section_res);
+                        continue;
+                    }
+
+                    //Parse data if all looks good
+                    int retry = 3;
+                    int enroll_time = 0;
+                    int CRN = 0;
+                    while((retry >= 0) && (enroll_time == 0) )
+                    {
+                        retry--;
+                        //fprintf(stderr, "retry loop: student %d course %d\n", i, courses[courseiterate]);
+
+                        //TODO: randomly select a section
+                        int rand_sec = rand_lim(NUM_SECTIONS);
+                        fprintf(stderr, "NUM_SECTIONS = %d\trand_sec = %d\n", NUM_SECTIONS, rand_sec);
+
+                        CRN = atoi(PQgetvalue(section_res, rand_sec, 0));
+                        char *quarter = (char*) malloc(sizeof(char) * 10);
+                        quarter = PQgetvalue(section_res, rand_sec, 1);
+                        int sec_year = atoi(PQgetvalue(section_res, rand_sec, 2));
+
+                        //TODO: Section MUST be after enroll_year and enroll_term
+                        //fprintf(stderr, "enroll year: %d, term: %d\nsec year: %d, quarter: %s\n", enroll_year, enroll_term, sec_year, quarter);
+                        if (enroll_year > sec_year)
+                        {
+                            enroll_time = 1;
+                            continue;
+                        }
+
+                        if (enroll_year == sec_year)
+                        {
+                            if (strcmp(quarter, "Winter") == 0)
+                            {
+                                if (enroll_term > 2)
+                                {
+                                    enroll_time = 1;
+                                    continue;
+                                }
+                            }
+                            else if (strcmp(quarter, "Spring") == 0)
+                            {
+                                if (enroll_term > 4)
+                                {
+                                    enroll_time = 1;
+                                    continue;
+                                }
+                            }
+                            else if (strcmp(quarter, "Summer") == 0)
+                            {
+                                if (enroll_term > 7)
+                                {
+                                    enroll_time = 1;
+                                    continue;
+                                }
+                            }
+                            else if (strcmp(quarter, "Fall") == 0)
+                            {
+                                if (enroll_term > 10)
+                                {
+                                    enroll_time = 1;
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                fprintf(stderr, "Error Parsing Term\n");
+                            }
+                        } 
+                        
+                        //TODO: Finally, check that they have < 4 records for that term
+
+                        fprintf(stderr, "CHECKING LIMIT\n");
+                        char *limit_buff = (char *)malloc(sizeof(char) * 1024);
+                        sprintf(limit_buff, "select distinct s.crn from registry.section s join registry.enrollment e on s.crn = e.crn where e.student_id=%d and s.year = %d and s.quarter=\'%s\';", i, sec_year, quarter);
+                        PGresult *limit_res = PQexec(conn, limit_buff);
+
+                        if (PQresultStatus(limit_res) != PGRES_TUPLES_OK)
+                        {
+                            free(limit_buff);
+                            exit_nicely(conn, "Checking LIMIT of student classes per term");
+                        }
+
+                        int LIM_SECTIONS = PQntuples(limit_res);
+                        if (NUM_SECTIONS > 3)
+                        {
+                            PQclear(limit_res);
+                            continue;
+                        }
+
+                        fprintf(stderr, "ADDING STUDENT TO SECTION\n");
+                        //add that student/crn to enrollment
+                        char *insert_buff = (char *)malloc (sizeof(char) * 1024);
+                        sprintf(insert_buff, "insert into registry.enrollment values(%d, %d);", i, CRN);
+                        fprintf(stderr, "INSERTING: %s\n", insert_buff);
+                        insert_res = PQexec(conn, insert_buff);
+
+                        if (PQresultStatus(insert_res) != PGRES_TUPLES_OK)
+                        {
+                            fprintf(stderr, "RECORD EXISTS, keep going!\n");
+                            //free(insert_buff);
+                            //exit_nicely(conn, "Inserting into Enrollment");
+                        } 
+
+                    }// while retry loop (sections per course)
                 }
 
-                PQclear(insert_res);                
-                
+                //PQclear(insert_res);                
+
             } //for: check prereq, insert row
 
             PQclear(course_of_maj_res);
@@ -244,7 +387,7 @@ int get_first_term(char *enroll_date, int year_or_term)
 }
 
 
-int check_prereq(PGconn *conn, int course)
+int check_prereq(PGconn *conn, int course, int *prereqlist)
 {
     char *prereq_buffer = (char *) malloc (sizeof(char) * 1024);
     sprintf(prereq_buffer, "select p.course_id from registry.course c join registry.prerequisite p on c.id=p.course_id where c.id=%d", course);
@@ -256,8 +399,14 @@ int check_prereq(PGconn *conn, int course)
         exit_nicely(conn, "Checking course prereqs");
     }
 
-    if (PQntuples(prereq_res) > 0)
+    int NUM_REQ = PQntuples(prereq_res);
+    if (NUM_REQ > 0)
     {
+        int i;
+        for (i = 0; i < NUM_REQ; i++)
+        {
+            prereqlist[i] = atoi(PQgetvalue(prereq_res, i, 0));
+        }
         PQclear(prereq_res);
         return -1;
     }
@@ -281,9 +430,26 @@ int already_enrolled(PGconn *conn, int student, int course)
     if (PQntuples(res) < 1)
     {
         PQclear(res);
-        return -1;
+        return 0;
     }
 
     PQclear(res);
-    return 0;
+    return -1;
+}
+
+int rand_lim(int limit) 
+{
+    //return a random number between 0 and limit inclusive
+
+    int divisor = RAND_MAX/(limit+1);
+    int retval;
+
+    do { 
+        retval = rand() / divisor;
+    } while (retval > limit);
+
+    if (retval > 0)
+        return retval -1;
+    else
+        return retval;
 }
