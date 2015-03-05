@@ -161,6 +161,7 @@ int main(int argc, char *argv[])
             if (DEBUG)
                 fprintf(f, "\t\tMajor %d has %d courses\n", majors[j], NUM_COURSES);
 
+            PGresult *insert_res;
             int courses [25];
             int courseiterate;
             for (courseiterate = 0; courseiterate < NUM_COURSES; courseiterate++)
@@ -169,6 +170,8 @@ int main(int argc, char *argv[])
                 if (DEBUG)
                     fprintf(f, "\t\t\tMajor %d includes course %d\n", majors[j], courses[courseiterate]);
 
+                //TODO randomly select which courses to continue on this path (to potential registration)
+
                 //check if course has a prerequisite
                 int req = check_prereq(conn, courses[courseiterate]);
                 if (req < 0) //prereq needed
@@ -176,12 +179,29 @@ int main(int argc, char *argv[])
                     //check if already enrolled
                     int enrolled = already_enrolled(conn, i, courses[courseiterate]);
                     if (enrolled < 0)
+                    {
                         fprintf(stderr, "%d Hasnt taken prereq for %d! \n", i, courses[courseiterate]);
-                    continue;
+                        continue;
+                    }
+
+                    //TODO: Join course and section on course_id, randomly select a section
+                    //TODO: Section MUST be after enroll_year and enroll_term
+
+                    //add that student/crn to enrollment
+                    char *insert_buff = (char *)malloc (sizeof(char) * 1024);
+                    sprint(insert_buff, "insert into registry.enrollment values(%d, %d);");
+                    insert_res = PQexec(conn, insert_buff);
+
+                    if (PQresultStatus(insert_res) != PGRES_TUPLES_OK)
+                    {
+                        free(insert_buffer);
+                        exit_nicely(conn, "Inserting into Enrollment");
+                    } 
                 }
+
+                PQclear(insert_res);                
                 
-                
-            }
+            } //for: check prereq, insert row
 
             PQclear(course_of_maj_res);
 
