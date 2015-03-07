@@ -110,7 +110,6 @@ int main(int argc, char *argv[])
         {
             char *grade = (char*) malloc(sizeof(char) * 5);
             int random = rand_lim(20);
-            fprintf(stderr, "rand = %d\n", random);
             int crn = atoi(PQgetvalue(enroll_count_res, crn_count, 0)); 
 
             //gen random grade based on gpa
@@ -121,16 +120,12 @@ int main(int argc, char *argv[])
 
             char *update_buff = (char*) malloc(sizeof(char) * 1024);
             sprintf(update_buff, "update registry.enrollment set grade=\'%s\' where student_id = %d and crn = %d;", grade, i, crn);
-            fprintf(stderr, "%s\n", update_buff);
-/*
             PGresult *enroll_grade_res = PQexec(conn, update_buff);
 
             if (PQresultStatus(enroll_grade_res) != PGRES_TUPLES_OK)
-            {
-                free(update_buff);
-                exit_nicely(conn, "updating grade for student");
-            } 
-*/
+                continue;
+
+            PQclear(enroll_grade_res); 
         }
 
         PQclear(gpa_res);
