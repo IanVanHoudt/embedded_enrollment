@@ -16,7 +16,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libpq-fe.h>
-#include <string.h>
+
+char *gen_grade(int, int, double);
 
 int exit_nicely(PGconn *conn, char *loc)
 {
@@ -87,7 +88,7 @@ int main(int argc, char *argv[])
         //get number of courses for student
         char *enroll_count_buff = (char*) malloc(sizeof(char) * 1024);
         sprintf(enroll_count_buff, "select crn from registry.enrollment where student_id = %d", i);
-        RGresult *enroll_count_res = PQexec(conn, enroll_count_buff);
+        PGresult *enroll_count_res = PQexec(conn, enroll_count_buff);
 
         if (PQntuples(enroll_count_res) < 1)
         {
@@ -101,14 +102,35 @@ int main(int argc, char *argv[])
             exit_nicely(conn, "Getting enrollment count for student");
         } 
 
-        int enroll_count = PQntuples(enroll_count_buff);
-        int crn[30];
+        int enroll_count = PQntuples(enroll_count_res);
         int crn_count;
-
+        int threshold = 10;
+        //get crns, generate grade for each, update into table
         for (crn_count = 0; crn_count < enroll_count; crn_count++)
         {
-            crn[crn_count] = atoi(PQgetvalue(enroll_count_res, crn_count, 0));
+            char *grade = (char*) malloc(sizeof(char) * 5);
+            int random = rand_lim(20);
+            fprintf(stderr, "rand = %d\n", random);
+            int crn = atoi(PQgetvalue(enroll_count_res, crn_count, 0)); 
+
+            //gen random grade based on gpa
+            grade = gen_grade(random, threshold, gpa);
  
+            if (!grade)
+                exit_nicely(conn, "generating grade");
+
+            char *update_buff = (char*) malloc(sizeof(char) * 1024);
+            sprintf(update_buff, "update registry.enrollment set grade=\'%s\' where student_id = %d and crn = %d;", grade, i, crn);
+            fprintf(stderr, "%s\n", update_buff);
+/*
+            PGresult *enroll_grade_res = PQexec(conn, update_buff);
+
+            if (PQresultStatus(enroll_grade_res) != PGRES_TUPLES_OK)
+            {
+                free(update_buff);
+                exit_nicely(conn, "updating grade for student");
+            } 
+*/
         }
 
         PQclear(gpa_res);
@@ -122,4 +144,81 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+int rand_lim(int limit)
+{
+    //return a random number between 0 and limit inclusive
 
+    int divisor = RAND_MAX/(limit+1);
+    int retval;
+
+    do {
+        retval = rand() / divisor;
+    } while (retval > limit);
+
+    if (retval > 0)
+        return retval -1;
+    else
+        return retval;
+}
+
+char *gen_grade(int random, int threshold, double gpa)
+{
+    char *grade = (char*) malloc(sizeof(char) * 5);
+
+    if (gpa >= 4.0)
+    {
+        grade = "A";
+    } 
+    else if (gpa >= 3.5)
+    {
+        if (random > threshold + 2)
+            grade = "A";
+        else if (random >= threshold)
+            grade = "B+";
+        else
+            grade = "B";
+    }
+    else if (gpa >= 3.0)
+    {
+        if (random > threshold + 5)
+            grade = "A";
+        else if (random >= threshold + 2)
+            grade = "B+";
+        else if (random >= threshold - 2)
+            grade = "B";
+        else
+            grade = "C";
+    }
+    else if (gpa >= 2.5)
+    {
+        if (random >= threshold + 8)
+            grade = "A";
+        else if (random >= threshold + 7)
+            grade = "B+";
+        else if (random >= threshold + 5)
+            grade = "B";
+        else if (random >= threshold + 3)
+            grade = "B-";
+        else
+            grade = "C";
+    }
+    else
+    {
+        if (random >= threshold + 10)
+            grade = "A";
+        else if (random >= threshold + 9)
+            grade = "A-";
+        else if (random >= threshold + 7)
+            grade = "B";
+        else if (random >= threshold + 5)
+            grade = "B-";
+        else if (random >= threshold)
+            grade = "C";
+        else if (random >= threshold -3)
+            grade = "D";
+        else
+            grade = "F";
+    }
+
+    return grade;
+}
